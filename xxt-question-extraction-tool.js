@@ -91,19 +91,27 @@
     }
 
     function findAnalysis(el){
-        const candidates = [
+        const exactValueNodes = [
             '.person-answer .pn-txt3 .pn-val',
             '.analysis .pn-val',
-            '.analysis',
-            '.answerAnalysis',
-            '.mark_answer'
+            '.answerAnalysis'
         ];
-        for(const s of candidates){
+        for(const s of exactValueNodes){
             const node = el.querySelector(s);
             if(node && trim(node.textContent)){
                 return trim(node.textContent);
             }
         }
+
+        const labeledBlocks = Array.from(el.querySelectorAll('.analysis, .pn-txt3, .mark_answer, .mark_key, p, div, span'));
+        for(const node of labeledBlocks){
+            const text = trim(node.textContent);
+            const m = text.match(/(?:答案)?解析[:：]\s*(.+)$/);
+            if(m && trim(m[1])){
+                return trim(m[1]);
+            }
+        }
+
         return '';
     }
 
