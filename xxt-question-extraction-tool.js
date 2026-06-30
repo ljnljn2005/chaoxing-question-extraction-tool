@@ -107,6 +107,21 @@
         return '';
     }
 
+    function getQuestionType(node, qText){
+        const typeText = (
+            node.querySelector('.type_tit')
+            || node.querySelector('.colorShallow')
+            || node.querySelector('.question-name .grey-text')
+            || {}
+        ).textContent || '';
+        const merged = trim(`${typeText} ${qText}`);
+        if(/判断题/.test(merged)) return 'judgement';
+        if(/多选题/.test(merged)) return 'multiple';
+        if(/单选题/.test(merged)) return 'single';
+        if(/填空题/.test(merged)) return 'blank';
+        return '';
+    }
+
     function parseQuestion(node){
         // 题干
         let qEl = node.querySelector('.qtContent')
@@ -114,21 +129,22 @@
             || node.querySelector('.question-name .html-content-box')
             || node.querySelector('.question-name');
         let qText = qEl ? trim(qEl.textContent).replace(/^\d+\.\s*/, '') : '';
+        const questionType = getQuestionType(node, qText);
         // 选项
-        const opts = parseOptions(node);
+        let opts = parseOptions(node);
+        if(!opts.length && questionType === 'judgement'){
+            opts = [
+                {key: 'A', text: '对'},
+                {key: 'B', text: '错'}
+            ];
+        }
         // 正确答案（尝试多种方式）
         let right = findCorrect(node);
         const analysis = findAnalysis(node);
         // 特殊：判断题页面上可能没有显式正确答案，但题目类型是判断题
         if(!right){
             // 若是判断题，可尝试从选项中查找文本为“对”或“错”的选项并判断哪个被标记为正确（若页面没有正确标识则留空）
-            const typeText = (
-                node.querySelector('.type_tit')
-                || node.querySelector('.colorShallow')
-                || node.querySelector('.question-name .grey-text')
-                || {}
-            ).textContent || '';
-            if(/判断题/.test(typeText) || /判断题/.test(qText)){
+            if(questionType === 'judgement'){
                 // 如果页面在 mark_key 中标识了我的答案并同时存在正确答案文本，findCorrect 已处理；否则无法得到正确答案 -> 返回空
                 // 仍可确保判断题选项用 A/B 显示（对->A, 错->B）
                 // 如果只有两个选项 "A. 对" "B. 错"，right 保持空（未知）
