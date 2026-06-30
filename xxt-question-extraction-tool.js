@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         导出学习通试题为规范格式（含判断题）
 // @namespace    http://tampermonkey.net/
-// @version      0.2
-// @description  抓取题目、选项与正确答案（判断题：对->A, 错->B），弹窗显示并可复制
+// @version      0.3
+// @description  抓取题目、选项与正确答案（含随堂练习，判断题：对->A, 错->B），弹窗显示并可复制
 // @match      	 *://*.chaoxing.com/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
@@ -14,10 +14,10 @@
     const trim = s => (s||'').replace(/\s+/g,' ').trim();
 
     function parseOptions(el){
-        const lis = Array.from(el.querySelectorAll('.mark_letter li'));
+        const lis = Array.from(el.querySelectorAll('.mark_letter li, .answer-list li'));
         return lis.map(li=>{
             const raw = trim(li.textContent);
-            const m = raw.match(/^([A-D])[\.\s：:]?\s*(.*)$/i);
+            const m = raw.match(/^([A-Z])[\.\s：:]?\s*(.*)$/i);
             if(m) return {key: m[1].toUpperCase(), text: trim(m[2])};
             // 可能是没有字母的选项（判断题可能只写 "A. 对" 或 "对"）
             // 尝试识别完全是"对"或"错"
@@ -28,12 +28,31 @@
         });
     }
 
+    function parseAnswerList(node){
+        if(!node) return '';
+        const items = Array.from(node.querySelectorAll('.pn-val-item'));
+        if(items.length){
+            return items.map((item, idx)=>{
+                const spans = Array.from(item.querySelectorAll('span'));
+                const value = trim((spans[1] || item).textContent);
+                return `(${idx + 1}) ${value}`;
+            }).join('；');
+        }
+        return normalizeAnswer(trim(node.textContent));
+    }
+
     function findCorrect(el){
+        const listNode = el.querySelector('.person-answer .pn-txt2 .pn-val-list');
+        if(listNode){
+            return parseAnswerList(listNode);
+        }
+
         // 优先寻找明显的正确答案节点
         const selCandidates = [
             '.rightAnswerContent',
             '.rightAnswer',
             '.right-answer',
+            '.person-answer .pn-txt2 .pn-val',
             '.element-invisible-hidden.colorGreen',
             '.mark_key .colorGreen .rightAnswerContent'
         ];
@@ -63,7 +82,7 @@
         // raw 可能是 "B"、"B; "、"：19世纪40年代; "、"ABD"、"对"、"错"
         if(!raw) return '';
         // 提取字母
-        const letters = (raw.match(/[A-D]/g) || []).join('');
+        const letters = (raw.match(/[A-Z]/g) || []).join('');
         if(letters) return letters;
         if(/对/.test(raw)) return 'A';
         if(/错/.test(raw)) return 'B';
@@ -71,18 +90,44 @@
         return raw;
     }
 
+    function findAnalysis(el){
+        const candidates = [
+            '.person-answer .pn-txt3 .pn-val',
+            '.analysis .pn-val',
+            '.analysis',
+            '.answerAnalysis',
+            '.mark_answer'
+        ];
+        for(const s of candidates){
+            const node = el.querySelector(s);
+            if(node && trim(node.textContent)){
+                return trim(node.textContent);
+            }
+        }
+        return '';
+    }
+
     function parseQuestion(node){
         // 题干
-        let qEl = node.querySelector('.qtContent') || node.querySelector('.mark_name');
+        let qEl = node.querySelector('.qtContent')
+            || node.querySelector('.mark_name')
+            || node.querySelector('.question-name .html-content-box')
+            || node.querySelector('.question-name');
         let qText = qEl ? trim(qEl.textContent).replace(/^\d+\.\s*/, '') : '';
         // 选项
         const opts = parseOptions(node);
         // 正确答案（尝试多种方式）
         let right = findCorrect(node);
+        const analysis = findAnalysis(node);
         // 特殊：判断题页面上可能没有显式正确答案，但题目类型是判断题
         if(!right){
             // 若是判断题，可尝试从选项中查找文本为“对”或“错”的选项并判断哪个被标记为正确（若页面没有正确标识则留空）
-            const typeText = (node.querySelector('.type_tit') || node.querySelector('.colorShallow') || {}).textContent || '';
+            const typeText = (
+                node.querySelector('.type_tit')
+                || node.querySelector('.colorShallow')
+                || node.querySelector('.question-name .grey-text')
+                || {}
+            ).textContent || '';
             if(/判断题/.test(typeText) || /判断题/.test(qText)){
                 // 如果页面在 mark_key 中标识了我的答案并同时存在正确答案文本，findCorrect 已处理；否则无法得到正确答案 -> 返回空
                 // 仍可确保判断题选项用 A/B 显示（对->A, 错->B）
@@ -90,7 +135,7 @@
             }
         }
 
-        return {qText, opts, right};
+        return {qText, opts, right, analysis};
     }
 
     function buildOutput(list){
@@ -104,13 +149,14 @@
                 });
             }
             lines.push(`答案：${it.right || '未知'}`);
+            lines.push(`解析：${it.analysis || ''}`);
             lines.push('');
         });
         return lines.join('\n');
     }
 
     function collectAll(){
-        const items = Array.from(document.querySelectorAll('.questionLi'));
+        const items = Array.from(document.querySelectorAll('.questionLi, .left-question-list .question-item'));
         const visible = items.filter(i=>i.offsetParent !== null);
         return visible.map(parseQuestion);
     }
