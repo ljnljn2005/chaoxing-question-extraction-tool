@@ -41,7 +41,7 @@
         return normalizeAnswer(trim(node.textContent));
     }
 
-    function findCorrect(el){
+    function findCorrect(el, questionType){
         const listNode = el.querySelector('.person-answer .pn-txt2 .pn-val-list');
         if(listNode){
             return parseAnswerList(listNode);
@@ -59,7 +59,7 @@
         for(const s of selCandidates){
             const node = el.querySelector(s);
             if(node && trim(node.textContent)){
-                return normalizeAnswer(trim(node.textContent));
+                return normalizeAnswer(trim(node.textContent), questionType);
             }
         }
         // 有时正确答案写在隐形 span（无 class rightAnswerContent）
@@ -78,12 +78,20 @@
         return '';
     }
 
-    function normalizeAnswer(raw){
+    function normalizeAnswer(raw, questionType=''){
         // raw 可能是 "B"、"B; "、"：19世纪40年代; "、"ABD"、"对"、"错"
         if(!raw) return '';
+        if(questionType === 'short'){
+            return raw;
+        }
+        const compact = trim(raw).replace(/[；;、，,\s]+/g, '');
+        if(/^(对|错)$/.test(compact)){
+            return compact === '对' ? 'A' : 'B';
+        }
+        if(/^[A-Z]+$/i.test(compact)){
+            return compact.toUpperCase();
+        }
         // 提取字母
-        const letters = (raw.match(/[A-Z]/g) || []).join('');
-        if(letters) return letters;
         if(/对/.test(raw)) return 'A';
         if(/错/.test(raw)) return 'B';
         // 直接返回trim后的（最后手段）
@@ -127,6 +135,7 @@
         if(/多选题/.test(merged)) return 'multiple';
         if(/单选题/.test(merged)) return 'single';
         if(/填空题/.test(merged)) return 'blank';
+        if(/简答题/.test(merged)) return 'short';
         return '';
     }
 
@@ -147,7 +156,7 @@
             ];
         }
         // 正确答案（尝试多种方式）
-        let right = findCorrect(node);
+        let right = findCorrect(node, questionType);
         const analysis = findAnalysis(node);
         // 特殊：判断题页面上可能没有显式正确答案，但题目类型是判断题
         if(!right){
